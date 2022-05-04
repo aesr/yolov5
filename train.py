@@ -30,7 +30,7 @@ import yaml
 from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import SGD, Adam, AdamW, lr_scheduler
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -48,14 +48,16 @@ from utils.datasets import create_dataloader
 from utils.downloads import attempt_download
 from utils.general import (LOGGER, check_dataset, check_file, check_git_status, check_img_size, check_requirements,
                            check_suffix, check_yaml, colorstr, get_latest_run, increment_path, init_seeds,
-                           intersect_dicts, is_ascii, labels_to_class_weights, labels_to_image_weights, methods,
-                           one_cycle, print_args, print_mutation, strip_optimizer)
+                           intersect_dicts, labels_to_class_weights, labels_to_image_weights, methods, one_cycle,
+                           print_args, print_mutation, strip_optimizer)
 from utils.loggers import Loggers
 from utils.loggers.wandb.wandb_utils import check_wandb_resume
 from utils.loss import ComputeLoss
 from utils.metrics import fitness
 from utils.plots import plot_evolve, plot_labels
 from utils.torch_utils import EarlyStopping, ModelEMA, de_parallel, select_device, torch_distributed_zero_first
+
+from models.common import Conv
 
 LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
 RANK = int(os.getenv('RANK', -1))
@@ -100,7 +102,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
             callbacks.register_action(k, callback=getattr(loggers, k))
 
     # Config
-    plots = not evolve and not opt.noplots  # create plots
+    #plots = not evolve  # create plots
+    plots = False
     cuda = device.type != 'cpu'
     init_seeds(1 + RANK)
     with torch_distributed_zero_first(LOCAL_RANK):
@@ -118,14 +121,99 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         with torch_distributed_zero_first(LOCAL_RANK):
             weights = attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
-        model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        model = Model(cfg or ckpt['model'].yaml, ch=5, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        print("printing model pretrained", model.model[0])
         exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys
         csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
         csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(csd, strict=False)  # load
+
+        #replace initial conv (model.model[0]) parameters with new conv
+        #transfer parameters later
+        new_initial_conv = Conv(5, 32, 6, 2)
+        new_initial_conv.f = model.model[0].f
+        new_initial_conv.np = sum(x.numel() for x in new_initial_conv.parameters())
+        new_initial_conv.i = model.model[0].i
+        new_initial_conv.type = str(new_initial_conv)[8:-2].replace('__main__.', '') 
+
+        print("new", new_initial_conv)
+        print("old", model.model[0])
+        #print("model type", type(model.model[0]))
+        #print("model f", model.model[0].f)
+        #print("iterating model")
+        #for m in model.model:
+        #    print(m)
+        model.model[0] = new_initial_conv
+
         LOGGER.info(f'Transferred {len(csd)}/{len(model.state_dict())} items from {weights}')  # report
     else:
-        model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        print("starting from scratch")
+        model = Model(cfg, ch=5, nc=nc, anchors=hyp.get('anchors')).to(device)
+
+        #load a pretrained model
+        print("using pretrained model")
+        weights = "yolov5s.pt"
+        with torch_distributed_zero_first(LOCAL_RANK):
+            weights = attempt_download(weights)  # download if not found locally
+            
+        ckpt = torch.load(weights, map_location='cpu')  # load checkpoint to CPU to avoid CUDA memory leak
+        pretrained_model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys
+        csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
+        csd = intersect_dicts(csd, pretrained_model.state_dict(), exclude=exclude)  # intersect
+        pretrained_model.load_state_dict(csd, strict=False)  # load
+
+        print("iterating models arch")
+        #for i, ( (name_model, param_model), (name_pretrained, param_pretrained)) in enumerate(zip(model.named_parameters(), pretrained_model.named_parameters())):
+        #    print("i", name_model, name_pretrained)
+        #    param_model.data.copy_(
+        for i, (module, module_pretrained) in enumerate(zip(model.model, pretrained_model.model)):
+            #if first convolution, dont transfer completely
+            if i == 0:
+                print("transfering first convolution parameters")
+                #print(module, module_pretrained)
+                #print('target')
+                #for name, param in module.named_parameters():
+                #    print(name, param.shape)
+
+                #print("source")
+                #for name, param in module_pretrained.named_parameters():
+                #    print(name, param.shape)
+                
+                #print(module.conv.weight.shape)
+                #print(module_pretrained.conv.weight.shape)
+                #transfer convolution params
+
+                #copy first three channels exactly
+                module.conv.weight.data[:, :3, :, :] = module_pretrained.conv.weight.data.clone()
+                module.conv.weight.data[:, -2, :, :] = module_pretrained.conv.weight.data[:, 0, :, :].clone()
+                module.conv.weight.data[:, -1, :, :] = module_pretrained.conv.weight.data[:, 0, :, :].clone()
+                #rest of channels assign to specific channels
+
+
+                #transfer batchnorm params
+                #print(module.bn.weight.data)
+                module.bn.weight.data = module_pretrained.bn.weight.data.clone()
+                module.bn.bias.data = module_pretrained.bn.bias.data.clone()
+                #module.bn.weight.data._copy(module_pretrained.bn.weight.data)
+                #module.bn.bias.data_copy(module_pretrained.bn.bias.data)
+
+
+            else:
+                for target_param, src_param in zip(module.parameters(), module_pretrained.parameters()):
+                    target_param.data.copy_(src_param.data.clone())
+            #print("i", module, module_pretrained)
+
+        #print("new model: ", model)
+        #print("pretrained model: ", pretrained_model)
+       
+        #transfer possible weights from pretrained to new model
+
+        #other way around
+        #load both model and pretrained model
+        #transfer all weights except one from the pretrained model model
+
+        #model = model.to(device)  # create
 
     # Freeze
     freeze = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # layers to freeze
@@ -224,7 +312,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                               gs,
                                               single_cls,
                                               hyp=hyp,
-                                              augment=True,
+                                              augment=False,
                                               cache=None if opt.cache == 'val' else opt.cache,
                                               rect=opt.rect,
                                               rank=LOCAL_RANK,
@@ -245,8 +333,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                                        gs,
                                        single_cls,
                                        hyp=hyp,
+                                       augment=False,
                                        cache=None if noval else opt.cache,
-                                       rect=True,
+                                       rect=False,
                                        rank=-1,
                                        workers=workers * 2,
                                        pad=0.5,
@@ -371,7 +460,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
                 pbar.set_description(('%10s' * 2 + '%10.4g' * 5) %
                                      (f'{epoch}/{epochs - 1}', mem, *mloss, targets.shape[0], imgs.shape[-1]))
-                callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots)
+                callbacks.run('on_train_batch_end', ni, model, imgs, targets, paths, plots, opt.sync_bn)
                 if callbacks.stop_training:
                     return
             # end batch ------------------------------------------------------------------------------------------------
@@ -459,7 +548,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                         save_dir=save_dir,
                         save_json=is_coco,
                         verbose=True,
-                        plots=plots,
+                        plots=True,
                         callbacks=callbacks,
                         compute_loss=compute_loss)  # val best model with plots
                     if is_coco:
@@ -486,7 +575,6 @@ def parse_opt(known=False):
     parser.add_argument('--nosave', action='store_true', help='only save final checkpoint')
     parser.add_argument('--noval', action='store_true', help='only validate final epoch')
     parser.add_argument('--noautoanchor', action='store_true', help='disable AutoAnchor')
-    parser.add_argument('--noplots', action='store_true', help='save no plot files')
     parser.add_argument('--evolve', type=int, nargs='?', const=300, help='evolve hyperparameters for x generations')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--cache', type=str, nargs='?', const='ram', help='--cache images in "ram" (default) or "disk"')
