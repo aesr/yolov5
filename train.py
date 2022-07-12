@@ -192,7 +192,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         ).to(
             device
         )  # create
-        print("printing model pretrained", model.model[0])
         exclude = (
             ["anchor"] if (cfg or hyp.get("anchors")) and not resume else []
         )  # exclude keys
@@ -208,13 +207,6 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         new_initial_conv.i = model.model[0].i
         new_initial_conv.type = str(new_initial_conv)[8:-2].replace("__main__.", "")
 
-        print("new", new_initial_conv)
-        print("old", model.model[0])
-        # print("model type", type(model.model[0]))
-        # print("model f", model.model[0].f)
-        # print("iterating model")
-        # for m in model.model:
-        #    print(m)
         model.model[0] = new_initial_conv
 
         LOGGER.info(
@@ -247,29 +239,12 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         )  # intersect
         pretrained_model.load_state_dict(csd, strict=False)  # load
 
-        print("iterating models arch")
-        # for i, ( (name_model, param_model), (name_pretrained, param_pretrained)) in enumerate(zip(model.named_parameters(), pretrained_model.named_parameters())):
-        #    print("i", name_model, name_pretrained)
-        #    param_model.data.copy_(
+        #transfering weights
         for i, (module, module_pretrained) in enumerate(
             zip(model.model, pretrained_model.model)
         ):
             # if first convolution, dont transfer completely
             if i == 0:
-                print("transfering first convolution parameters")
-                # print(module, module_pretrained)
-                # print('target')
-                # for name, param in module.named_parameters():
-                #    print(name, param.shape)
-
-                # print("source")
-                # for name, param in module_pretrained.named_parameters():
-                #    print(name, param.shape)
-
-                # print(module.conv.weight.shape)
-                # print(module_pretrained.conv.weight.shape)
-                # transfer convolution params
-
                 # copy first three channels exactly
                 module.conv.weight.data[
                     :, :3, :, :
@@ -280,32 +255,16 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 module.conv.weight.data[
                     :, -1, :, :
                 ] = module_pretrained.conv.weight.data[:, 0, :, :].clone()
-                # rest of channels assign to specific channels
 
                 # transfer batchnorm params
-                # print(module.bn.weight.data)
                 module.bn.weight.data = module_pretrained.bn.weight.data.clone()
                 module.bn.bias.data = module_pretrained.bn.bias.data.clone()
-                # module.bn.weight.data._copy(module_pretrained.bn.weight.data)
-                # module.bn.bias.data_copy(module_pretrained.bn.bias.data)
 
             else:
                 for target_param, src_param in zip(
                     module.parameters(), module_pretrained.parameters()
                 ):
                     target_param.data.copy_(src_param.data.clone())
-            # print("i", module, module_pretrained)
-
-        # print("new model: ", model)
-        # print("pretrained model: ", pretrained_model)
-
-        # transfer possible weights from pretrained to new model
-
-        # other way around
-        # load both model and pretrained model
-        # transfer all weights except one from the pretrained model model
-
-        # model = model.to(device)  # create
 
     # Freeze
     freeze = [
