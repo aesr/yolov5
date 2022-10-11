@@ -38,6 +38,8 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
+import deephub_notification.publisher
+
 import val  # for end-of-epoch mAP
 from models.common import Conv
 from models.experimental import attempt_load
@@ -239,7 +241,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         )  # intersect
         pretrained_model.load_state_dict(csd, strict=False)  # load
 
-        #transfering weights
+        # transfering weights
         for i, (module, module_pretrained) in enumerate(
             zip(model.model, pretrained_model.model)
         ):
@@ -472,9 +474,16 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         f"Logging results to {colorstr('bold', save_dir)}\n"
         f"Starting training for {epochs} epochs..."
     )
+
+    publisher_mode = os.getenv("FILES")
+    publisher = deephub_notification.publisher.PublisherFactory().get_client(
+        publisher_mode
+    )
+
     for epoch in range(
         start_epoch, epochs
     ):  # epoch ------------------------------------------------------------------
+        publisher.publish("TRAIN", optional_info={"epoch": epoch})
         callbacks.run("on_train_epoch_start")
         model.train()
 
