@@ -193,7 +193,9 @@ class Loggers:
             else:
                 x_dh[k] = v
 
-        self.deephub.publish("Train/Val Epoch End", optional_info=x_dh)
+        
+        x_dh["epoch"] = epoch
+        self.deephub.publish("TRAIN", optional_info=x_dh)
 
         if self.csv:
             file = self.save_dir / "results.csv"
