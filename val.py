@@ -298,7 +298,7 @@ def run(
     publisher.publish("VAL", optional_info=dh_metrics) 
 
     #save metrics to .json
-    with open("validation_metrics.json", "r") as f:
+    with open("validation_metrics.json", "w") as f:
         json.dump(dh_metrics, f)
 
 
