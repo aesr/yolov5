@@ -45,6 +45,8 @@ from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, time_sync
 
+import deephub_notification.publisher
+
 
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
@@ -123,6 +125,12 @@ def run(
         callbacks=Callbacks(),
         compute_loss=None,
 ):
+    #initialize deephub logging
+    publisher_mode = os.getenv("FILES")
+    publisher = deephub_notification.publisher.PublisherFactory().get_client(
+        publisher_mode
+    )
+
     # Initialize/load model and set device
     training = model is not None
     if training:  # called by train.py
@@ -276,6 +284,23 @@ def run(
     # Print results
     pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
     LOGGER.info(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+    #logging metrics 
+    dh_metrics = {"metrics":{
+        #"precision":p,
+        #"recall":r,
+        "f1":f1,
+        "mean_recall":mr,
+        "mean_precision":mp,
+        "map50":map50,
+        "map":map,
+    } }
+
+    publisher.publish("VAL", optional_info=dh_metrics) 
+
+    #save metrics to .json
+    with open("validation_metrics.json", "r") as f:
+        json.dump(dh_metrics, f)
+
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
