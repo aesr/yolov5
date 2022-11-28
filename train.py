@@ -216,7 +216,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
         )  # report
     else:
         print("starting from scratch")
-        model = Model(cfg, ch=5, nc=nc, anchors=hyp.get("anchors")).to(device)
+        num_bands = data_dict["num_bands"]
+        # code assumes num_bands >= 3 at the moment
+        model = Model(cfg, ch=num_bands, nc=nc, anchors=hyp.get("anchors")).to(device)
 
         # load a pretrained model
         print("using pretrained model")
@@ -251,12 +253,19 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 module.conv.weight.data[
                     :, :3, :, :
                 ] = module_pretrained.conv.weight.data.clone()
-                module.conv.weight.data[
-                    :, -2, :, :
-                ] = module_pretrained.conv.weight.data[:, 0, :, :].clone()
-                module.conv.weight.data[
-                    :, -1, :, :
-                ] = module_pretrained.conv.weight.data[:, 0, :, :].clone()
+
+                # remaining channels transfer the first channel data
+                for current_channel in range(num_bands - 3, num_bands):
+                    module.conv.weight.data[
+                        :, current_channel, :, :
+                    ] = module_pretrained.conv.weight.data[:, 0, :, :].clone()
+
+                # module.conv.weight.data[
+                #    :, -2, :, :
+                # ] = module_pretrained.conv.weight.data[:, 0, :, :].clone()
+                # module.conv.weight.data[
+                #    :, -1, :, :
+                # ] = module_pretrained.conv.weight.data[:, 0, :, :].clone()
 
                 # transfer batchnorm params
                 module.bn.weight.data = module_pretrained.bn.weight.data.clone()
