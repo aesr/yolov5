@@ -129,11 +129,13 @@ def run(
 
     num_images = 0
     dt, seen = [0.0, 0.0, 0.0], 0
+    publish_interval = len(dataset) // 100
     for path, im, im0s, vid_cap, s in dataset:
         num_images += 1
-        publisher.publish(
-            "PREDICT", optional_info={"progress": num_images / len(dataset)}
-        )
+        if (num_images % publish_interval) == 0:
+            publisher.publish(
+                "PREDICT", optional_info={"progress": num_images / len(dataset)}
+            )
         t1 = time_sync()
         im = torch.from_numpy(im).to(device)
         im = im.half() if model.fp16 else im.float()  # uint8 to fp16/32
