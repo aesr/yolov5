@@ -237,7 +237,7 @@ class LoadImages:
             # Read image
             self.count += 1
             #img0 = cv2.imread(path)  # BGR
-            img0 = tifffile.imread(path).astype(np.int32)
+            img0 = tifffile.imread(path).astype(float)
             assert img0 is not None, f'Image Not Found {path}'
             s = f'image {self.count}/{self.nf} {path}: '
 
@@ -664,7 +664,7 @@ class LoadImagesAndLabels(Dataset):
                 im = np.load(fn)
             else:  # read image
                 #im = cv2.imread(f)  # BGR
-                im = tifffile.imread(f).astype(np.int32)
+                im = tifffile.imread(f).astype(float)
                 #print("image read:", im)
                 assert im is not None, f'Image Not Found {f}'
 
@@ -934,7 +934,7 @@ def verify_image_label(args):
     try:
         # verify images
         #im = Image.open(im_file)
-        im = tifffile.imread(im_file)
+        im = tifffile.imread(im_file).astype(float)
         #im.verify()  # PIL verify
         #shape = exif_size(im)  # image size
         #only width and height needed
@@ -1021,7 +1021,7 @@ def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False, profil
         except Exception as e:  # use OpenCV
             print(f'WARNING: HUB ops PIL failure {f}: {e}')
             #im = cv2.imread(f)
-            im = tifffile.imread(f)
+            im = tifffile.imread(f).astype(float)
             im_height, im_width = im.shape[:2]
             r = max_dim / max(im_height, im_width)  # ratio
             if r < 1.0:  # image too large
