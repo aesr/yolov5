@@ -203,7 +203,9 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         # replace initial conv (model.model[0]) parameters with new conv
         # transfer parameters later
-        new_initial_conv = Conv(5, 32, 6, 2)
+        #WRONG THIS ASSUMES WE USE 5 channels in
+        num_bands = data_dict["num_bands"]
+        new_initial_conv = Conv(num_bands, 32, 6, 2)
         new_initial_conv.f = model.model[0].f
         new_initial_conv.np = sum(x.numel() for x in new_initial_conv.parameters())
         new_initial_conv.i = model.model[0].i
