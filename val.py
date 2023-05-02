@@ -267,6 +267,7 @@ def run(
     pbar = tqdm(
         dataloader, desc=s, bar_format="{l_bar}{bar:10}{r_bar}{bar:-10b}"
     )  # progress bar
+    total_number_labels = 0
     for batch_i, (im, targets, paths, shapes) in enumerate(pbar):
         callbacks.run("on_val_batch_start")
         t1 = time_sync()
@@ -311,6 +312,7 @@ def run(
             path, shape = Path(paths[si]), shapes[si][0]
             correct = torch.zeros(npr, niou, dtype=torch.bool, device=device)  # init
             seen += 1
+            total_number_labels += nl
 
             if npr == 0:
                 if nl:
@@ -385,12 +387,16 @@ def run(
     # Print results
     pf = "%20s" + "%11i" * 2 + "%11.3g" * 4  # print format
     LOGGER.info(pf % ("all", seen, nt.sum(), mp, mr, map50, map))
-    # logging metrics
+    # logging metrics, here is where to add new metrics
+    #TODO: add percentage of detected objects 
+    print(tp, total_number_labels)
+    #tp is a vector for each class
     dh_metrics = {
         "metrics": {
             # "precision":p,
             # "recall":r,
             # "f1": f1,
+            "percentage_correctly_detected_trees":tp.sum() / total_number_labels,
             "mean_recall": mr,
             "mean_precision": mp,
             "map50": map50,
