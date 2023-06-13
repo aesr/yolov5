@@ -372,6 +372,10 @@ def run(
 
     # Compute metrics
     stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*stats)]  # to numpy
+    dh_metrics = {
+        "metrics": {}
+    }
+
     if len(stats) and stats[0].any():
         tp, fp, p, r, f1, ap, ap_class = ap_per_class(
             *stats, plot=plots, save_dir=save_dir, names=names
@@ -381,28 +385,20 @@ def run(
         nt = np.bincount(
             stats[3].astype(np.int64), minlength=nc
         )  # number of targets per class
+        dh_metrics["metrics"]["percentage_correctly_detected_trees"] = tp.sum() / total_number_labels
     else:
         nt = torch.zeros(1)
 
     # Print results
     pf = "%20s" + "%11i" * 2 + "%11.3g" * 4  # print format
     LOGGER.info(pf % ("all", seen, nt.sum(), mp, mr, map50, map))
+
     # logging metrics, here is where to add new metrics
-    #TODO: add percentage of detected objects 
-    print(tp, total_number_labels)
-    #tp is a vector for each class
-    dh_metrics = {
-        "metrics": {
-            # "precision":p,
-            # "recall":r,
-            # "f1": f1,
-            "percentage_correctly_detected_trees":tp.sum() / total_number_labels,
-            "mean_recall": mr,
-            "mean_precision": mp,
-            "map50": map50,
-            "map": map,
-        }
-    }
+    dh_metrics["metrics"]["mean_recall"] = mr
+    dh_metrics["metrics"]["mean_precision"] = mp
+    dh_metrics["metrics"]["map50"] = map50
+    dh_metrics["metrics"]["map"] = map
+   
 
     publisher.publish(task.upper(), optional_info=dh_metrics)
 
