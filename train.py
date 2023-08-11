@@ -224,7 +224,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         # load a pretrained model
         print("using pretrained model")
-        weights = "yolov5s.pt"
+        weights = "yolov5m.pt"
         with torch_distributed_zero_first(LOCAL_RANK):
             weights = attempt_download(weights)  # download if not found locally
 
