@@ -183,7 +183,13 @@ def run(
             s += "%gx%g " % im.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             imc = im0.copy() if save_crop else im0  # for save_crop
-            annotator = Annotator(im0, line_width=line_thickness, example=str(names))
+            LOGGER.info(f"source: {s}, webcam?:{webcam}, im.shape: {im.shape}, im0.shape: {im0.shape}")
+            try:
+                annotator = Annotator(im0, line_width=line_thickness, example=str(names))
+            except Exception as e:
+                LOGGER.info(f"Annotator failed at: {s}, with error: {e}")
+                LOGGER.info(f"Skipping annotation")
+                save_img = save_crop = view_img = False
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0.shape).round()
@@ -224,7 +230,8 @@ def run(
                             )
 
             # Stream results
-            im0 = annotator.result()
+            if view_img or save_img:
+                im0 = annotator.result()
             if view_img:
                 cv2.imshow(str(p), im0)
                 cv2.waitKey(1)  # 1 millisecond
